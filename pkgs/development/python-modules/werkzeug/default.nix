@@ -12,7 +12,7 @@
 
 buildPythonPackage rec {
   pname = "werkzeug";
-  version = "2.0.3";
+  version = "2.1.0";
   format = "setuptools";
 
   disabled = pythonOlder "3.6";
@@ -20,7 +20,7 @@ buildPythonPackage rec {
   src = fetchPypi {
     pname = "Werkzeug";
     inherit version;
-    sha256 = "sha256-uGP4/wV8UiFktgZ8niiwQRYbS+W6TQ2s7qpQoWOCLTw=";
+    sha256 = "sha256-m1VGaj6Z4TsfBoamYRfTm9qFqZIWbgp5rt/PNYYyj3o=";
   };
 
   propagatedBuildInputs = lib.optionals (!stdenv.isDarwin) [
