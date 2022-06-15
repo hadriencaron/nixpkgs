@@ -6,7 +6,7 @@ source $stdenv/setup
 
 header "exporting $url (rev $rev) into $out"
 
-$SHELL $fetcher --builder --url "$url" --out "$out" --rev "$rev" \
+$SHELL $fetcher --builder --url "$url" --out "$out" --rev "$rev" --filter "$filter" \
   ${leaveDotGit:+--leave-dotGit} \
   ${fetchLFS:+--fetch-lfs} \
   ${deepClone:+--deepClone} \

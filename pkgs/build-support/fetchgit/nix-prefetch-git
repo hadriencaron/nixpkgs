@@ -5,6 +5,7 @@ set -e -o pipefail
 url=
 rev=
 expHash=
+filter=
 hashType=$NIX_HASH_ALGO
 deepClone=$NIX_PREFETCH_GIT_DEEP_CLONE
 leaveDotGit=$NIX_PREFETCH_GIT_LEAVE_DOT_GIT
@@ -47,6 +48,7 @@ Options:
       --url url       Any url understood by 'git clone'.
       --rev ref       Any sha1 or references (such as refs/heads/master)
       --hash h        Expected hash.
+      --filter f      Subset rule as understood by 'git clone'
       --branch-name   Branch name to check out into
       --deepClone     Clone the entire repository.
       --no-deepClone  Make a shallow clone of just the required ref.
@@ -61,6 +63,7 @@ Options:
 
 # some git commands print to stdout, which would contaminate our JSON output
 clean_git(){
+  echo "$@"
     git "$@" >&2
 }
 
@@ -73,6 +76,7 @@ for arg; do
             --url) argfun=set_url;;
             --rev) argfun=set_rev;;
             --hash) argfun=set_hashType;;
+            --filter) argfun=set_filter;;
             --branch-name) argfun=set_branchName;;
             --deepClone) deepClone=true;;
             --quiet) QUIET=true;;
@@ -88,6 +92,7 @@ for arg; do
                     1) url=$arg;;
                     2) rev=$arg;;
                     3) expHash=$arg;;
+                    4) filter="$arg";;
                     *) exit 1;;
                 esac
                 ;;
@@ -148,22 +153,39 @@ url_to_name(){
 checkout_hash(){
     local hash="$1"
     local ref="$2"
+    local filter="$3"
+    echo "inside checkout_hash"
 
     if test -z "$hash"; then
         hash=$(hash_from_ref "$ref")
     fi
+    # if test -n "$filter"; then
+    #   filter="-- $filter"
+    # fi
 
+    echo "another before_fetch"
     clean_git fetch ${builder:+--progress} --depth=1 origin "$hash" || \
+    echo "another before_fetch2"
     clean_git fetch -t ${builder:+--progress} origin || return 1
+    echo "another before_fetch3"
 
     local object_type=$(git cat-file -t "$hash")
     if [[ "$object_type" == "commit" ]]; then
+      echo "another before_checkout " "$filter"
+      if test -n "$filter"; then
+        clean_git checkout "$hash" -- "$filter" || return 1
+        echo "AFTER"
+        clean_git checkout -b "$branchName" || return 1
+        echo "DONE"
+      else
         clean_git checkout -b "$branchName" "$hash" || return 1
+      fi
     elif [[ "$object_type" == "tree" ]]; then
         clean_git config user.email "nix-prefetch-git@localhost"
         clean_git config user.name "nix-prefetch-git"
         local commit_id=$(git commit-tree "$hash" -m "Commit created from tree hash $hash")
-        clean_git checkout -b "$branchName" "$commit_id" || return 1
+        echo "another before_checkout42"
+        clean_git checkout -b "$branchName" "$commit_id" "$filter" || return 1
     else
         echo "Unrecognized git object type: $object_type"
         return 1
@@ -174,6 +196,10 @@ checkout_hash(){
 checkout_ref(){
     local hash="$1"
     local ref="$2"
+    local filter="$3"
+    # if test -n "$filter"; then
+    #   filter="-- $filter"
+    # fi
 
     if [[ -n "$deepClone" ]]; then
         # The caller explicitly asked for a deep clone.  Deep clones
@@ -189,8 +215,10 @@ checkout_ref(){
 
     if test -n "$ref"; then
         # --depth option is ignored on http repository.
+      echo "before fetch"
         clean_git fetch ${builder:+--progress} --depth 1 origin +"$ref" || return 1
-        clean_git checkout -b "$branchName" FETCH_HEAD || return 1
+      echo "before checkout"
+      clean_git checkout -b "$branchName" FETCH_HEAD || return 1
     else
         return 1
     fi
@@ -208,6 +236,7 @@ init_submodules(){
         local dir
         local name
         local url
+        #local filter
 
         # checkout each submodule
         hash=$(echo "$l" | awk '{print $1}' | tr -d '-')
@@ -217,7 +246,8 @@ init_submodules(){
             sed -n "s,^\(.*\)\.path $dir\$,\\1,p")
         url=$(git config --get "${name}.url")
 
-        clone "$dir" "$url" "$hash" ""
+        #clone "$dir" "$url" "$hash" "" "filter"
+        clone "$dir" "$url" "$hash" "" ""
     done
 }
 
@@ -227,15 +257,17 @@ clone(){
     local url="$2"
     local hash="$3"
     local ref="$4"
+    local filter="$5"
 
     cd "$dir"
 
+    echo "hello world 42 !!" $filter
     # Initialize the repository.
     init_remote "$url"
 
     # Download data from the repository.
-    checkout_ref "$hash" "$ref" ||
-    checkout_hash "$hash" "$ref" || (
+    checkout_ref "$hash" "$ref" "$filter"||
+    checkout_hash "$hash" "$ref" "$filter" || (
         echo 1>&2 "Unable to checkout $hash$ref from $url."
         exit 1
     )
@@ -302,6 +334,7 @@ clone_user_rev() {
     local dir="$1"
     local url="$2"
     local rev="${3:-HEAD}"
+    local filter="$4"
 
     if [ -n "$fetchLFS" ]; then
         tmpHomePath="$(mktemp -d "${TMPDIR:-/tmp}/nix-prefetch-git-tmp-home-XXXXXXXXXX")"
@@ -310,16 +343,18 @@ clone_user_rev() {
         git lfs install
     fi
 
+    echo "hello filter " "$filter"
+
     # Perform the checkout.
     case "$rev" in
         HEAD|refs/*)
-            clone "$dir" "$url" "" "$rev" 1>&2;;
+            clone "$dir" "$url" "" "$rev" "$filter" 1>&2;;
         *)
             if test -z "$(echo "$rev" | tr -d 0123456789abcdef)"; then
-                clone "$dir" "$url" "$rev" "" 1>&2
+                clone "$dir" "$url" "$rev" "" "$filter" 1>&2
             else
                 # if revision is not hexadecimal it might be a tag
-                clone "$dir" "$url" "" "refs/tags/$rev" 1>&2
+                clone "$dir" "$url" "" "refs/tags/$rev" "$filter" 1>&2
             fi;;
     esac
 
@@ -399,6 +434,7 @@ print_results() {
 {
   "url": "$(json_escape "$url")",
   "rev": "$(json_escape "$fullRev")",
+  "filter": $(json_escap "$filter"),
   "date": "$(json_escape "$commitDateStrict8601")",
   "path": "$(json_escape "$finalPath")",
   "$(json_escape "$hashType")": "$(json_escape "$hash")",
@@ -430,7 +466,7 @@ fi
 if test -n "$builder"; then
     test -n "$out" -a -n "$url" -a -n "$rev" || usage
     mkdir -p "$out"
-    clone_user_rev "$out" "$url" "$rev"
+    clone_user_rev "$out" "$url" "$rev" "$filter"
 else
     if test -z "$hashType"; then
         hashType=sha256
@@ -457,7 +493,7 @@ else
         mkdir -p "$tmpFile"
 
         # Perform the checkout.
-        clone_user_rev "$tmpFile" "$url" "$rev"
+        clone_user_rev "$tmpFile" "$url" "$rev" "$filter"
 
         # Compute the hash.
         hash=$(nix-hash --type $hashType --base32 "$tmpFile")

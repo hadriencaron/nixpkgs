@@ -14,6 +14,7 @@
 in
 { url, rev ? "HEAD", md5 ? "", sha256 ? "", hash ? "", leaveDotGit ? deepClone
 , fetchSubmodules ? true, deepClone ? false
+, filter ? ""
 , branchName ? null
 , name ? urlToName url rev
 , # Shell code executed after the file has been fetched
@@ -74,7 +75,7 @@ stdenvNoCC.mkDerivation {
   else
     lib.fakeSha256;
 
-  inherit url rev leaveDotGit fetchLFS fetchSubmodules deepClone branchName postFetch;
+  inherit url rev leaveDotGit fetchLFS fetchSubmodules deepClone branchName postFetch filter;
 
   postHook = if netrcPhase == null then null else ''
     ${netrcPhase}
