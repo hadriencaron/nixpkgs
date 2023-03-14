@@ -20740,6 +20740,8 @@ with pkgs;
 
   subdl = callPackage ../applications/video/subdl { };
 
+  gaupol = callPackage ../applications/video/gaupol { };
+
   subtitleeditor = callPackage ../applications/video/subtitleeditor { };
 
   suil = callPackage ../development/libraries/audio/suil { };
